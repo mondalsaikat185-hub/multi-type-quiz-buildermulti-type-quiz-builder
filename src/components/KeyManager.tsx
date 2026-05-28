@@ -22,29 +22,62 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
   const [autoRotate, setAutoRotate] = useState(true);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  // Load API keys from secure server pool
+  // Load API keys from secure server pool with client-side merging
   useEffect(() => {
     async function loadApiKeys() {
+      // Get whatever is currently in localStorage fallback
+      const fallbackStr = localStorage.getItem('quiz_keys_fallback');
+      let localKeys: ApiKeyItem[] = [];
+      if (fallbackStr) {
+        try {
+          localKeys = JSON.parse(fallbackStr);
+        } catch {}
+      }
+
       try {
         const response = await fetch('/api/keys');
         if (!response.ok) throw new Error('Failed to load keys from server');
         const data = await response.json();
-        setKeys(data.keys || []);
+        
+        const serverKeys: ApiKeyItem[] = data.keys || [];
+        
+        // Merge server keys and local keys:
+        // - Any local-only key (e.g., id starts with 'key_') should be preserved.
+        // - Any server key: if we have an unmasked version in localKeys, preserve the unmasked key.
+        //   Otherwise, use the server key (which is masked).
+        const mergedKeys: ApiKeyItem[] = [];
+        
+        // Preserve all local-only keys (keys created strictly on the client, e.g. on Vercel)
+        localKeys.forEach(lk => {
+          if (lk.id && lk.id.startsWith('key_')) {
+            mergedKeys.push(lk);
+          }
+        });
+        
+        // Process server keys
+        serverKeys.forEach(sk => {
+          const existingLocal = localKeys.find(lk => lk.id === sk.id);
+          if (existingLocal && !existingLocal.key.includes('...') && !existingLocal.key.includes('●')) {
+            // Keep the unmasked local key but update enabled state from server
+            mergedKeys.push({
+              ...sk,
+              key: existingLocal.key // preserve unmasked
+            });
+          } else {
+            mergedKeys.push(sk);
+          }
+        });
+
+        setKeys(mergedKeys);
         if (data.autoRotate !== undefined) {
           setAutoRotate(data.autoRotate);
         }
-        onKeysChanged(data.keys || []);
-        localStorage.setItem('quiz_keys_fallback', JSON.stringify(data.keys || []));
+        onKeysChanged(mergedKeys);
+        localStorage.setItem('quiz_keys_fallback', JSON.stringify(mergedKeys));
       } catch (err: any) {
         console.warn('Failed to load api keys from server, falling back to localStorage:', err);
-        const fallback = localStorage.getItem('quiz_keys_fallback');
-        if (fallback) {
-          try {
-            const parsed = JSON.parse(fallback);
-            setKeys(parsed);
-            onKeysChanged(parsed);
-          } catch {}
-        }
+        setKeys(localKeys);
+        onKeysChanged(localKeys);
       } finally {
         setIsLoading(false);
       }

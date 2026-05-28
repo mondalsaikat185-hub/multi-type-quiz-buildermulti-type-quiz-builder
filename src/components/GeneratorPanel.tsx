@@ -20,7 +20,7 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
   const [currentBlockIndex, setCurrentBlockIndex] = useState<number>(0);
   const [parsedData, setParsedData] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState('');
-  const [modelName, setModelName] = useState('gemini-1.5-flash');
+  const [modelName, setModelName] = useState('gemini-2.5-flash');
   
   const [isLoaded, setIsLoaded] = useState(false);
   const [lastLoadedQuizType, setLastLoadedQuizType] = useState<QuizType | null>(null);
@@ -143,11 +143,17 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
     setDetectedCount(null);
     setCurrentBlockIndex(0);
 
+    // 1. Filter out masked keys, only sending valid unmasked keys to server
+    const validCustomKeys = customKeys.filter(k => k && k.startsWith('AIzaSy') && !k.includes('...'));
+
+    // 2. Set dynamic pacing delay. 5 RPM models (like gemini-2.5-flash) require ~13.5s delay to avoid quota errors.
+    const isFiveRpmModel = modelName.includes('2.5') || modelName.includes('2.0') || modelName.includes('pro');
+    const pacingDelayMs = isFiveRpmModel ? 13500 : 5000;
+
     try {
       if (isBatchMode) {
         // --- SMART BATCH MODE ---
         // Passage/Cloze: TRUE single API call (entire text at once — 1 RPM used)
-        // Other types: chunked (10 questions per chunk) with 4s delay for gemini-1.5-flash (15 RPM)
         console.log(`[QUIZ-BUILDER-AI] Parsing in Smart Batch Mode...`);
 
         let allExtractedQuestions: any[] = [];
@@ -168,7 +174,7 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
               rawText: rawText.trim(),
               quizType,
               modelName,
-              customKeys,
+              customKeys: validCustomKeys,
               isBatch: true,
               passageContext: ''
             })
@@ -198,8 +204,7 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
 
         } else {
           // ---- CHUNKED BATCH for all other quiz types (GK, Math, Reasoning, Vocabulary, Parajumble, Error) ----
-          // gemini-1.5-flash free tier = 15 RPM → 1 request per 4 seconds is safe
-          const CHUNK_SIZE = 10; // 10 questions per chunk (generous for 1.5-flash)
+          const CHUNK_SIZE = 5; // Reduced from 10 to 5 questions to completely bypass Vercel 10s timeout
           const blocks = splitQuestionBlocks(rawText, quizType);
           const chunks: string[] = [];
           for (let j = 0; j < blocks.length; j += CHUNK_SIZE) {
@@ -211,10 +216,10 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
             setCurrentBlockIndex(ci + 1);
             setProgress(((ci) / chunks.length) * 90);
 
-            // Pacing: 4 seconds between chunks for 15 RPM (gemini-1.5-flash)
+            // Dynamic Pacing Delay to respect Gemini RPM rate limit
             if (ci > 0) {
-              console.log('[QUIZ-BUILDER-AI] Waiting 4s for 15 RPM rate limit...');
-              await new Promise(resolve => setTimeout(resolve, 4000));
+              console.log(`[QUIZ-BUILDER-AI] Waiting ${pacingDelayMs / 1000}s to avoid rate limits...`);
+              await new Promise(resolve => setTimeout(resolve, pacingDelayMs));
             }
 
             const chunkResp = await fetch('/api/parse-quiz', {
@@ -224,7 +229,7 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
                 rawText: chunks[ci],
                 quizType,
                 modelName,
-                customKeys,
+                customKeys: validCustomKeys,
                 isBatch: true,
               })
             });
@@ -303,8 +308,8 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
           setProgress(((i) / activeBlocksCount) * 100);
           
           if (i > 0) {
-            console.log("[QUIZ-BUILDER-AI] Waiting 4s for 15 RPM limit (gemini-1.5-flash)...");
-            await new Promise(resolve => setTimeout(resolve, 4000));
+            console.log(`[QUIZ-BUILDER-AI] Waiting ${pacingDelayMs / 1000}s to avoid rate limits...`);
+            await new Promise(resolve => setTimeout(resolve, pacingDelayMs));
           }
           
           const response = await fetch('/api/parse-quiz', {
@@ -314,7 +319,7 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
               rawText: blocks[i],
               quizType,
               modelName,
-              customKeys,
+              customKeys: validCustomKeys,
               passageContext: passageText
             })
           });
@@ -505,10 +510,10 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
           onChange={e => setModelName(e.target.value)}
           className="text-[10px] uppercase font-bold tracking-wider px-3 py-1.5 border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-850 text-gray-600 dark:text-zinc-350 outline-none hover:border-gray-300 dark:hover:border-zinc-600 transition-colors cursor-pointer"
         >
-          <option value="gemini-1.5-flash" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 1.5 Flash (Free — 15 RPM) ✓</option>
-          <option value="gemini-1.5-flash-8b" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 1.5 Flash-8B (Free — Fast)</option>
-          <option value="gemini-2.5-flash" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 2.5 Flash (Free — 5 RPM)</option>
+          <option value="gemini-2.5-flash" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 2.5 Flash (Free — 5 RPM) ✓ Default</option>
           <option value="gemini-2.5-pro" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 2.5 Pro (Paid)</option>
+          <option value="gemini-1.5-flash" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 1.5 Flash (Free — 15 RPM)</option>
+          <option value="gemini-1.5-flash-8b" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 1.5 Flash-8B (Free — Fast)</option>
         </select>
       </div>
 

@@ -143,7 +143,7 @@ export function createExpressApp() {
   // API endpoints
   app.post("/api/parse-quiz", async (req, res) => {
     try {
-      const { rawText, quizType, modelName, passageContext } = req.body;
+      const { rawText, quizType, modelName, passageContext, customKeys } = req.body;
       
       // Load enabled keys from server-side pool
       const config = readKeysFile();
@@ -151,15 +151,27 @@ export function createExpressApp() {
       
       if (config.keys && Array.isArray(config.keys)) {
         config.keys.forEach((k: any) => {
-          if (k.enabled && typeof k.key === "string" && k.key.trim()) {
+          if (k.enabled && typeof k.key === "string" && k.key.trim() && k.key.startsWith("AIzaSy")) {
             candidateKeys.push(k.key.trim());
+          }
+        });
+      }
+
+      // Add client-side custom keys if provided (ensuring they are valid unmasked keys)
+      if (customKeys && Array.isArray(customKeys)) {
+        customKeys.forEach((k: any) => {
+          if (typeof k === "string" && k.trim() && k.startsWith("AIzaSy") && !k.includes("...") && !k.includes("●")) {
+            const trimmed = k.trim();
+            if (!candidateKeys.includes(trimmed)) {
+              candidateKeys.push(trimmed);
+            }
           }
         });
       }
       
       // Fallback to server environment key if available and not already in client list
       const envKey = process.env.GEMINI_API_KEY;
-      if (envKey && envKey.trim() && !candidateKeys.includes(envKey.trim())) {
+      if (envKey && envKey.trim() && envKey.startsWith("AIzaSy") && !candidateKeys.includes(envKey.trim())) {
         candidateKeys.push(envKey.trim());
       }
 
