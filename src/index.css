@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Georgia:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Georgia', serif;
+  
+  --color-accent: #059669;
+  --color-accent-hover: #047857;
+  --color-bg-base: #FAFAFA;
+  --color-bg-sidebar: #FFFFFF;
+  --color-bg-surface: #FFFFFF;
+  --color-border-subtle: rgba(0, 0, 0, 0.08);
+}
+
+body {
+  background-color: var(--color-bg-base);
+  color: #1F2937;
+  font-family: var(--font-sans);
+}
+
+.accent { color: var(--color-accent); }
+.bg-surface { background-color: var(--color-bg-surface); }
+.border-subtle { border-color: var(--color-border-subtle); }
+.serif { font-family: var(--font-serif); }
