@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Key, Plus, Trash2, Shield, RefreshCw, Check, AlertCircle, HelpCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Key, Plus, Trash2, Shield, RefreshCw, Check, AlertCircle, HelpCircle, Cloud, CloudOff } from 'lucide-react';
+import { db } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export interface ApiKeyItem {
   id: string;
@@ -12,6 +14,15 @@ interface KeyManagerProps {
   onKeysChanged: (keys: ApiKeyItem[]) => void;
 }
 
+// Firebase Firestore document path for API keys
+const KEYS_DOC_PATH = 'config';
+const KEYS_DOC_ID = 'api_keys';
+
+function maskKeyForDisplay(k: string): string {
+  if (!k || k.length <= 12) return '●●●●●●●●';
+  return `${k.slice(0, 8)}...${k.slice(-4)}`;
+}
+
 export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
   const [newKey, setNewKey] = useState('');
@@ -21,70 +32,98 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [autoRotate, setAutoRotate] = useState(true);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [firebaseConnected, setFirebaseConnected] = useState(true);
 
-  // Load API keys from secure server pool with client-side merging
+  // ── Save keys to Firebase ──────────────────────────────────────────────
+  const saveKeysToFirebase = useCallback(async (keysToSave: ApiKeyItem[], rotate: boolean) => {
+    try {
+      const docRef = doc(db, KEYS_DOC_PATH, KEYS_DOC_ID);
+      await setDoc(docRef, {
+        keys: keysToSave,
+        autoRotate: rotate,
+        updatedAt: new Date().toISOString()
+      });
+      setFirebaseConnected(true);
+      console.log('[KeyManager] Keys saved to Firebase Firestore.');
+    } catch (err) {
+      console.error('[KeyManager] Failed to save keys to Firebase:', err);
+      setFirebaseConnected(false);
+      // Fallback: save to localStorage
+      localStorage.setItem('quiz_keys_fallback', JSON.stringify(keysToSave));
+    }
+  }, []);
+
+  // ── Load keys from Firebase on mount ───────────────────────────────────
   useEffect(() => {
     async function loadApiKeys() {
-      // Get whatever is currently in localStorage fallback
-      const fallbackStr = localStorage.getItem('quiz_keys_fallback');
-      let localKeys: ApiKeyItem[] = [];
-      if (fallbackStr) {
-        try {
-          localKeys = JSON.parse(fallbackStr);
-        } catch {}
-      }
-
+      // 1. Try loading from Firebase Firestore first
       try {
-        const response = await fetch('/api/keys');
-        if (!response.ok) throw new Error('Failed to load keys from server');
-        const data = await response.json();
-        
-        const serverKeys: ApiKeyItem[] = data.keys || [];
-        
-        // Merge server keys and local keys:
-        // - Any local-only key (e.g., id starts with 'key_') should be preserved.
-        // - Any server key: if we have an unmasked version in localKeys, preserve the unmasked key.
-        //   Otherwise, use the server key (which is masked).
-        const mergedKeys: ApiKeyItem[] = [];
-        
-        // Preserve all local-only keys (keys created strictly on the client, e.g. on Vercel)
-        localKeys.forEach(lk => {
-          if (lk.id && lk.id.startsWith('key_')) {
-            mergedKeys.push(lk);
-          }
-        });
-        
-        // Process server keys
-        serverKeys.forEach(sk => {
-          const existingLocal = localKeys.find(lk => lk.id === sk.id);
-          if (existingLocal && !existingLocal.key.includes('...') && !existingLocal.key.includes('●')) {
-            // Keep the unmasked local key but update enabled state from server
-            mergedKeys.push({
-              ...sk,
-              key: existingLocal.key // preserve unmasked
-            });
-          } else {
-            mergedKeys.push(sk);
-          }
-        });
+        const docRef = doc(db, KEYS_DOC_PATH, KEYS_DOC_ID);
+        const docSnap = await getDoc(docRef);
 
-        setKeys(mergedKeys);
-        if (data.autoRotate !== undefined) {
-          setAutoRotate(data.autoRotate);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const loadedKeys: ApiKeyItem[] = data.keys || [];
+          const loadedRotate = data.autoRotate !== undefined ? data.autoRotate : true;
+
+          setKeys(loadedKeys);
+          setAutoRotate(loadedRotate);
+          onKeysChanged(loadedKeys);
+          setFirebaseConnected(true);
+
+          // Also cache to localStorage as backup
+          localStorage.setItem('quiz_keys_fallback', JSON.stringify(loadedKeys));
+          console.log(`[KeyManager] Loaded ${loadedKeys.length} keys from Firebase.`);
+        } else {
+          // Document doesn't exist yet — check localStorage fallback
+          const fallbackStr = localStorage.getItem('quiz_keys_fallback');
+          let localKeys: ApiKeyItem[] = [];
+          if (fallbackStr) {
+            try { localKeys = JSON.parse(fallbackStr); } catch {}
+          }
+
+          setKeys(localKeys);
+          onKeysChanged(localKeys);
+          setFirebaseConnected(true);
+
+          // If we have local keys, migrate them to Firebase
+          if (localKeys.length > 0) {
+            await saveKeysToFirebase(localKeys, true);
+            console.log('[KeyManager] Migrated localStorage keys to Firebase.');
+          }
         }
-        onKeysChanged(mergedKeys);
-        localStorage.setItem('quiz_keys_fallback', JSON.stringify(mergedKeys));
-      } catch (err: any) {
-        console.warn('Failed to load api keys from server, falling back to localStorage:', err);
+      } catch (err) {
+        console.warn('[KeyManager] Firebase load failed, falling back to localStorage:', err);
+        setFirebaseConnected(false);
+
+        // Fallback to localStorage
+        const fallbackStr = localStorage.getItem('quiz_keys_fallback');
+        let localKeys: ApiKeyItem[] = [];
+        if (fallbackStr) {
+          try { localKeys = JSON.parse(fallbackStr); } catch {}
+        }
         setKeys(localKeys);
         onKeysChanged(localKeys);
       } finally {
         setIsLoading(false);
       }
     }
+
     loadApiKeys();
   }, []);
 
+  // ── Update parent and persist whenever keys change ─────────────────────
+  const updateKeys = useCallback(async (newKeys: ApiKeyItem[], newRotate?: boolean) => {
+    const rotate = newRotate !== undefined ? newRotate : autoRotate;
+    setKeys(newKeys);
+    onKeysChanged(newKeys);
+
+    // Save to both Firebase and localStorage
+    localStorage.setItem('quiz_keys_fallback', JSON.stringify(newKeys));
+    await saveKeysToFirebase(newKeys, rotate);
+  }, [autoRotate, onKeysChanged, saveKeysToFirebase]);
+
+  // ── Add key ────────────────────────────────────────────────────────────
   const handleAddKey = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -101,131 +140,59 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
       return;
     }
 
-    try {
-      const response = await fetch('/api/keys', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: trimmedKey, label: newLabel.trim() })
-      });
-      let data: any = {};
-      try { data = await response.json(); } catch {
-        throw new Error('Server returned unreadable response');
-      }
-      if (!response.ok) {
-        throw new Error(data.error || 'Server error');
-      }
-      setKeys(data.keys || []);
-      setNewKey('');
-      setNewLabel('');
-      setSuccess('API key added to your secure pool!');
-      onKeysChanged(data.keys || []);
-      localStorage.setItem('quiz_keys_fallback', JSON.stringify(data.keys || []));
-    } catch (err: any) {
-      console.warn('Server save failed, saving strictly to local browser storage:', err);
-      const fallback = localStorage.getItem('quiz_keys_fallback');
-      let localList = [];
-      if (fallback) {
-        try { localList = JSON.parse(fallback); } catch {}
-      }
-      const newItem = {
-        id: 'key_' + Date.now(),
-        key: trimmedKey,
-        label: newLabel.trim() || `Local Key #${localList.length + 1}`,
-        enabled: true
-      };
-      const updatedList = [...localList, newItem];
-      localStorage.setItem('quiz_keys_fallback', JSON.stringify(updatedList));
-      setKeys(updatedList);
-      onKeysChanged(updatedList);
-      setNewKey('');
-      setNewLabel('');
-      setSuccess('API key saved securely to your browser storage!');
+    // Check for duplicates
+    const duplicate = keys.some(k => k.key === trimmedKey);
+    if (duplicate) {
+      setError('This API key is already in the pool');
+      return;
     }
+
+    const newItem: ApiKeyItem = {
+      id: 'key_' + Date.now(),
+      key: trimmedKey,
+      label: newLabel.trim() || `Key Pool #${keys.length + 1}`,
+      enabled: true,
+    };
+
+    const updatedKeys = [...keys, newItem];
+    await updateKeys(updatedKeys);
+
+    setNewKey('');
+    setNewLabel('');
+    setSuccess(firebaseConnected
+      ? '✅ API key added & synced to Firebase cloud!'
+      : '✅ API key saved to browser storage (Firebase offline)');
   };
 
+  // ── Delete key ─────────────────────────────────────────────────────────
   const handleDeleteKey = async (id: string) => {
     setError('');
     setSuccess('');
-    try {
-      const response = await fetch(`/api/keys/${id}`, { method: 'DELETE' });
-      let data: any = {};
-      try { data = await response.json(); } catch {
-        throw new Error('Server returned unreadable response');
-      }
-      if (!response.ok) throw new Error(data.error || 'Failed to delete key');
-      setKeys(data.keys || []);
-      setSuccess('API key deleted.');
-      onKeysChanged(data.keys || []);
-      localStorage.setItem('quiz_keys_fallback', JSON.stringify(data.keys || []));
-    } catch (err: any) {
-      console.warn('Server delete failed, deleting from local browser storage:', err);
-      const fallback = localStorage.getItem('quiz_keys_fallback');
-      if (fallback) {
-        try {
-          const localList = JSON.parse(fallback);
-          const updatedList = localList.filter((k: any) => k.id !== id);
-          localStorage.setItem('quiz_keys_fallback', JSON.stringify(updatedList));
-          setKeys(updatedList);
-          onKeysChanged(updatedList);
-          setSuccess('API key deleted from local browser storage.');
-        } catch {}
-      }
-    }
+
+    const updatedKeys = keys.filter(k => k.id !== id);
+    await updateKeys(updatedKeys);
+    setSuccess('API key deleted.');
   };
 
+  // ── Toggle key enable/disable ──────────────────────────────────────────
   const handleToggleKey = async (id: string) => {
     setError('');
     setSuccess('');
-    try {
-      const response = await fetch(`/api/keys/toggle/${id}`, { method: 'POST' });
-      let data: any = {};
-      try { data = await response.json(); } catch {
-        throw new Error('Server returned unreadable response');
-      }
-      if (!response.ok) throw new Error(data.error || 'Failed to toggle key');
-      setKeys(data.keys || []);
-      onKeysChanged(data.keys || []);
-      localStorage.setItem('quiz_keys_fallback', JSON.stringify(data.keys || []));
-    } catch (err: any) {
-      console.warn('Server toggle failed, toggling in local browser storage:', err);
-      const fallback = localStorage.getItem('quiz_keys_fallback');
-      if (fallback) {
-        try {
-          const localList = JSON.parse(fallback);
-          const updatedList = localList.map((k: any) => {
-            if (k.id === id) {
-              return { ...k, enabled: !k.enabled };
-            }
-            return k;
-          });
-          localStorage.setItem('quiz_keys_fallback', JSON.stringify(updatedList));
-          setKeys(updatedList);
-          onKeysChanged(updatedList);
-        } catch {}
-      }
-    }
+
+    const updatedKeys = keys.map(k =>
+      k.id === id ? { ...k, enabled: !k.enabled } : k
+    );
+    await updateKeys(updatedKeys);
   };
 
+  // ── Toggle auto-rotate ────────────────────────────────────────────────
   const handleToggleAutoRotate = async () => {
     setError('');
     setSuccess('');
-    try {
-      const response = await fetch('/api/keys/rotate', { method: 'POST' });
-      let data: any = {};
-      try { data = await response.json(); } catch {
-        throw new Error('Server returned unreadable response');
-      }
-      if (!response.ok) throw new Error(data.error || 'Failed to toggle auto-rotate');
-      setAutoRotate(data.autoRotate);
-    } catch (err: any) {
-      console.warn('Server auto-rotate failed, toggling locally:', err);
-      setAutoRotate(!autoRotate);
-    }
-  };
 
-  const maskKey = (keyString: string) => {
-    // Keys received from backend are already masked
-    return keyString;
+    const newRotate = !autoRotate;
+    setAutoRotate(newRotate);
+    await saveKeysToFirebase(keys, newRotate);
   };
 
   const activeCount = keys.filter(k => k.enabled).length;
@@ -261,13 +228,24 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
             <h2 className="text-[10px] uppercase tracking-widest text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-2">
               <Shield size={12} className="text-emerald-700 dark:text-emerald-400" /> Gemini API Key Pool
             </h2>
-            <span className="text-[9px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded uppercase tracking-widest font-bold flex items-center gap-1 border border-solid border-emerald-100 dark:border-emerald-900/40">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse mr-0.5"></span>
-              {activeCount} Active
-            </span>
+            <div className="flex items-center gap-2">
+              {/* Firebase connection indicator */}
+              <span className={`text-[8px] uppercase tracking-wider font-bold flex items-center gap-1 px-1.5 py-0.5 rounded border border-solid ${
+                firebaseConnected 
+                  ? 'text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 border-sky-100 dark:border-sky-900/40' 
+                  : 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border-amber-100 dark:border-amber-900/40'
+              }`}>
+                {firebaseConnected ? <Cloud size={9} /> : <CloudOff size={9} />}
+                {firebaseConnected ? 'Firebase' : 'Local'}
+              </span>
+              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded uppercase tracking-widest font-bold flex items-center gap-1 border border-solid border-emerald-100 dark:border-emerald-900/40">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse mr-0.5"></span>
+                {activeCount} Active
+              </span>
+            </div>
           </div>
           <p className="text-[11px] text-gray-400 dark:text-zinc-400 leading-relaxed font-sans lg:block hidden">
-            Supply your backup key pool. The engine automatically rotates keys to safeguard against 503 errors and exhaustion issues.
+            Supply your backup key pool. Keys are securely stored in Firebase Firestore — no Vercel redeploy needed. The engine automatically rotates keys to safeguard against rate-limit errors.
           </p>
           <p className="text-[10px] text-gray-500 dark:text-zinc-500 font-sans lg:hidden inline-block italic">
             {isDrawerOpen ? 'Tap here to collapse Key Manager' : 'Tap/Pull here to configure Gemini API keys'}
@@ -341,11 +319,11 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
           
           {isLoading ? (
             <div className="text-xs text-gray-400 py-1 italic flex items-center gap-1.5 font-sans">
-              <RefreshCw size={12} className="animate-spin text-emerald-700" /> Fetching configurations...
+              <RefreshCw size={12} className="animate-spin text-emerald-700" /> Fetching configurations from Firebase...
             </div>
           ) : keys.length === 0 ? (
             <div className="text-xs text-gray-400 dark:text-zinc-500 py-4 italic text-center bg-neutral-50 dark:bg-zinc-850/30 border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl font-sans">
-              Key pool is currently empty. Utilizing system-generic runner credentials.
+              Key pool is currently empty. Add your Gemini API keys above — they'll be synced to Firebase automatically.
             </div>
           ) : (
             <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
@@ -365,7 +343,7 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                         )}
                       </span>
-                      <span className="text-[9px] font-mono text-gray-400 dark:text-zinc-500">{maskKey(k.key)}</span>
+                      <span className="text-[9px] font-mono text-gray-400 dark:text-zinc-500">{maskKeyForDisplay(k.key)}</span>
                     </div>
                   </div>
 

@@ -4,5 +4,9 @@ service cloud.firestore {
     match /quizzes/{quizId} {
       allow read, write: if true;
     }
+    match /config/{docId} {
+      allow read, write: if true;
+    }
   }
 }
+
