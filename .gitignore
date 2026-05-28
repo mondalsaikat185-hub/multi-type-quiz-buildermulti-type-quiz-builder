@@ -6,3 +6,5 @@ coverage/
 *.log
 .env*
 !.env.example
+quiz_keys.json
+

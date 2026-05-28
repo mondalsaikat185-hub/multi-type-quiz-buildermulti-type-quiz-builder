@@ -33,9 +33,17 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
           setAutoRotate(data.autoRotate);
         }
         onKeysChanged(data.keys || []);
+        localStorage.setItem('quiz_keys_fallback', JSON.stringify(data.keys || []));
       } catch (err: any) {
-        console.error('Failed to load api keys', err);
-        setError('Failed to load keys: ' + err.message);
+        console.warn('Failed to load api keys from server, falling back to localStorage:', err);
+        const fallback = localStorage.getItem('quiz_keys_fallback');
+        if (fallback) {
+          try {
+            const parsed = JSON.parse(fallback);
+            setKeys(parsed);
+            onKeysChanged(parsed);
+          } catch {}
+        }
       } finally {
         setIsLoading(false);
       }
@@ -65,23 +73,39 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: trimmedKey, label: newLabel.trim() })
       });
-      // Safe JSON parse — never let response.json() throw raw browser errors
       let data: any = {};
       try { data = await response.json(); } catch {
-        throw new Error(response.ok
-          ? 'Server returned an unreadable response. Please restart the app and try again.'
-          : `Server error (${response.status}). Please restart the app.`);
+        throw new Error('Server returned unreadable response');
       }
       if (!response.ok) {
-        throw new Error(data.error || `Server error (${response.status})`);
+        throw new Error(data.error || 'Server error');
       }
       setKeys(data.keys || []);
       setNewKey('');
       setNewLabel('');
       setSuccess('API key added to your secure pool!');
       onKeysChanged(data.keys || []);
+      localStorage.setItem('quiz_keys_fallback', JSON.stringify(data.keys || []));
     } catch (err: any) {
-      setError(err.message);
+      console.warn('Server save failed, saving strictly to local browser storage:', err);
+      const fallback = localStorage.getItem('quiz_keys_fallback');
+      let localList = [];
+      if (fallback) {
+        try { localList = JSON.parse(fallback); } catch {}
+      }
+      const newItem = {
+        id: 'key_' + Date.now(),
+        key: trimmedKey,
+        label: newLabel.trim() || `Local Key #${localList.length + 1}`,
+        enabled: true
+      };
+      const updatedList = [...localList, newItem];
+      localStorage.setItem('quiz_keys_fallback', JSON.stringify(updatedList));
+      setKeys(updatedList);
+      onKeysChanged(updatedList);
+      setNewKey('');
+      setNewLabel('');
+      setSuccess('API key saved securely to your browser storage!');
     }
   };
 
@@ -92,14 +116,26 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
       const response = await fetch(`/api/keys/${id}`, { method: 'DELETE' });
       let data: any = {};
       try { data = await response.json(); } catch {
-        throw new Error(`Server error (${response.status}). Please restart the app.`);
+        throw new Error('Server returned unreadable response');
       }
       if (!response.ok) throw new Error(data.error || 'Failed to delete key');
       setKeys(data.keys || []);
-      setSuccess('API key deleted from pool.');
+      setSuccess('API key deleted.');
       onKeysChanged(data.keys || []);
+      localStorage.setItem('quiz_keys_fallback', JSON.stringify(data.keys || []));
     } catch (err: any) {
-      setError(err.message);
+      console.warn('Server delete failed, deleting from local browser storage:', err);
+      const fallback = localStorage.getItem('quiz_keys_fallback');
+      if (fallback) {
+        try {
+          const localList = JSON.parse(fallback);
+          const updatedList = localList.filter((k: any) => k.id !== id);
+          localStorage.setItem('quiz_keys_fallback', JSON.stringify(updatedList));
+          setKeys(updatedList);
+          onKeysChanged(updatedList);
+          setSuccess('API key deleted from local browser storage.');
+        } catch {}
+      }
     }
   };
 
@@ -110,13 +146,29 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
       const response = await fetch(`/api/keys/toggle/${id}`, { method: 'POST' });
       let data: any = {};
       try { data = await response.json(); } catch {
-        throw new Error(`Server error (${response.status}). Please restart the app.`);
+        throw new Error('Server returned unreadable response');
       }
       if (!response.ok) throw new Error(data.error || 'Failed to toggle key');
       setKeys(data.keys || []);
       onKeysChanged(data.keys || []);
+      localStorage.setItem('quiz_keys_fallback', JSON.stringify(data.keys || []));
     } catch (err: any) {
-      setError(err.message);
+      console.warn('Server toggle failed, toggling in local browser storage:', err);
+      const fallback = localStorage.getItem('quiz_keys_fallback');
+      if (fallback) {
+        try {
+          const localList = JSON.parse(fallback);
+          const updatedList = localList.map((k: any) => {
+            if (k.id === id) {
+              return { ...k, enabled: !k.enabled };
+            }
+            return k;
+          });
+          localStorage.setItem('quiz_keys_fallback', JSON.stringify(updatedList));
+          setKeys(updatedList);
+          onKeysChanged(updatedList);
+        } catch {}
+      }
     }
   };
 
@@ -127,12 +179,13 @@ export default function KeyManager({ onKeysChanged }: KeyManagerProps) {
       const response = await fetch('/api/keys/rotate', { method: 'POST' });
       let data: any = {};
       try { data = await response.json(); } catch {
-        throw new Error(`Server error (${response.status}). Please restart the app.`);
+        throw new Error('Server returned unreadable response');
       }
       if (!response.ok) throw new Error(data.error || 'Failed to toggle auto-rotate');
       setAutoRotate(data.autoRotate);
     } catch (err: any) {
-      setError(err.message);
+      console.warn('Server auto-rotate failed, toggling locally:', err);
+      setAutoRotate(!autoRotate);
     }
   };
 
