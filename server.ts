@@ -5,10 +5,11 @@ import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
-// Safe __dirname resolution for both ES Modules (local) and CommonJS (Vercel)
+// Safe __dirname resolution for both ES Modules (local) and CommonJS (Vercel) without syntax-level parser issues
 const getDirname = () => {
   try {
-    return path.dirname(fileURLToPath(import.meta.url));
+    const metaUrl = new Function("return import.meta.url")();
+    return path.dirname(fileURLToPath(metaUrl));
   } catch {
     return typeof __dirname !== "undefined" ? __dirname : process.cwd();
   }
