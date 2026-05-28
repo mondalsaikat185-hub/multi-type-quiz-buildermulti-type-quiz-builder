@@ -15,7 +15,7 @@ const getDirname = () => {
 };
 const __dirname = getDirname();
 
-export async function createExpressApp() {
+export function createExpressApp() {
   const app = express();
   const PORT = 3000;
 
@@ -892,26 +892,28 @@ NUMBERS: Always write all digits in English (0-9). Never use Bengali/Devanagari 
     const isDev = process.env.NODE_ENV !== "production";
     if (isDev) {
       const viteModule = "vite";
-      const { createServer: createViteServer } = await import(viteModule);
-      const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: "custom",
-      });
-      app.use(vite.middlewares);
-      app.use("*", async (req, res, next) => {
-        try {
-          const url = req.originalUrl;
-          let template = fs.readFileSync(
-            path.join(process.cwd(), "index.html"),
-            "utf-8"
-          );
-          template = await vite.transformIndexHtml(url, template);
-          res.status(200).set({ "Content-Type": "text/html" }).end(template);
-        } catch (e: any) {
-          vite.ssrFixStacktrace(e);
-          next(e);
-        }
-      });
+      (async () => {
+        const { createServer: createViteServer } = await import(viteModule);
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: "custom",
+        });
+        app.use(vite.middlewares);
+        app.use("*", async (req, res, next) => {
+          try {
+            const url = req.originalUrl;
+            let template = fs.readFileSync(
+              path.join(process.cwd(), "index.html"),
+              "utf-8"
+            );
+            template = await vite.transformIndexHtml(url, template);
+            res.status(200).set({ "Content-Type": "text/html" }).end(template);
+          } catch (e: any) {
+            vite.ssrFixStacktrace(e);
+            next(e);
+          }
+        });
+      })();
     } else {
       const distPath = path.join(process.cwd(), "dist");
       app.use(express.static(distPath));
@@ -925,10 +927,9 @@ NUMBERS: Always write all digits in English (0-9). Never use Bengali/Devanagari 
 }
 
 if (!process.env.VERCEL) {
-  createExpressApp().then(app => {
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-    });
+  const app = createExpressApp();
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
   });
 }
