@@ -1,12 +1,19 @@
 import express from "express";
 import path from "path";
 import cors from "cors";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Safe __dirname resolution for both ES Modules (local) and CommonJS (Vercel)
+const getDirname = () => {
+  try {
+    return path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    return typeof __dirname !== "undefined" ? __dirname : process.cwd();
+  }
+};
+const __dirname = getDirname();
 
 export async function createExpressApp() {
   const app = express();
