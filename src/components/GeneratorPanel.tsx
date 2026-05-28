@@ -20,7 +20,7 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
   const [currentBlockIndex, setCurrentBlockIndex] = useState<number>(0);
   const [parsedData, setParsedData] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState('');
-  const [modelName, setModelName] = useState('gemini-2.5-flash');
+  const [modelName, setModelName] = useState('gemini-2.0-flash');
   
   const [isLoaded, setIsLoaded] = useState(false);
   const [lastLoadedQuizType, setLastLoadedQuizType] = useState<QuizType | null>(null);
@@ -146,9 +146,10 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
     // 1. Filter out masked keys, only sending valid unmasked keys to server
     const validCustomKeys = customKeys.filter(k => k && k.startsWith('AIzaSy') && !k.includes('...'));
 
-    // 2. Set dynamic pacing delay. 5 RPM models (like gemini-2.5-flash) require ~13.5s delay to avoid quota errors.
-    const isFiveRpmModel = modelName.includes('2.5') || modelName.includes('2.0') || modelName.includes('pro');
-    const pacingDelayMs = isFiveRpmModel ? 13500 : 5000;
+    // 2. Set dynamic pacing delay based on model RPM limits.
+    // gemini-2.5-flash/pro: 10 RPM → 7s delay | gemini-2.0-flash: 15 RPM → 4.5s delay
+    const isSlowRpmModel = modelName.includes('2.5') || modelName.includes('pro');
+    const pacingDelayMs = isSlowRpmModel ? 7000 : 4500;
 
     try {
       if (isBatchMode) {
@@ -510,10 +511,9 @@ export default function GeneratorPanel({ quizType, config, customKeys = [] }: Ge
           onChange={e => setModelName(e.target.value)}
           className="text-[10px] uppercase font-bold tracking-wider px-3 py-1.5 border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-850 text-gray-600 dark:text-zinc-350 outline-none hover:border-gray-300 dark:hover:border-zinc-600 transition-colors cursor-pointer"
         >
-          <option value="gemini-2.5-flash" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 2.5 Flash (Free — 5 RPM) ✓ Default</option>
-          <option value="gemini-2.5-pro" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 2.5 Pro (Paid)</option>
-          <option value="gemini-1.5-flash" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 1.5 Flash (Free — 15 RPM)</option>
-          <option value="gemini-1.5-flash-8b" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 1.5 Flash-8B (Free — Fast)</option>
+          <option value="gemini-2.0-flash" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 2.0 Flash (Free — 1500/day, 15 RPM) ✓ Default</option>
+          <option value="gemini-2.5-flash" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 2.5 Flash (Free — ⚠️ 20/day only!)</option>
+          <option value="gemini-2.5-pro" className="bg-white dark:bg-zinc-900 text-gray-800 dark:text-zinc-200">Gemini 2.5 Pro (Paid — ⚠️ 5/day free)</option>
         </select>
       </div>
 

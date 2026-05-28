@@ -11,10 +11,10 @@ const getDirname = () => {
     const metaUrl = new Function("return import.meta.url")();
     return path.dirname(fileURLToPath(metaUrl));
   } catch {
-    return typeof __dirname !== "undefined" ? __dirname : process.cwd();
+    return typeof (globalThis as any).__dirname !== "undefined" ? (globalThis as any).__dirname : process.cwd();
   }
 };
-const __dirname = getDirname();
+const _dirname = getDirname();
 
 export function createExpressApp() {
   const app = express();
@@ -836,7 +836,7 @@ NUMBERS: Always write all digits in English (0-9). Never use Bengali/Devanagari 
             let geminiResponse: any;
             try {
               geminiResponse = await ai.models.generateContent({
-                model: modelName || "gemini-1.5-flash",
+                model: modelName || "gemini-2.0-flash",
                 contents: promptContent,
                 config: {
                   systemInstruction: systemPrompt,
