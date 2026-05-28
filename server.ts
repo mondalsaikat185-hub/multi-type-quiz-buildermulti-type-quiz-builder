@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-async function startServer() {
+export async function createExpressApp() {
   const app = express();
   const PORT = 3000;
 
@@ -911,9 +911,14 @@ NUMBERS: Always write all digits in English (0-9). Never use Bengali/Devanagari 
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  createExpressApp().then(app => {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  });
+}
