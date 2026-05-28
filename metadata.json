@@ -1,0 +1,6 @@
+{
+  "name": "Multi-Type Quiz Builder",
+  "description": "Extract structured JSON quizzes from raw text using AI, and generate portable HTML quiz bundles. Includes Firebase for session persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
