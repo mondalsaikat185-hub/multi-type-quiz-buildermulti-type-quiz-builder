@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { QuizType } from '../types';
-import { Book, BookOpen, Quote, FileText, Eraser, AlertCircle, Calculator, Brain, Sparkles } from 'lucide-react';
+import { Book, BookOpen, Quote, FileText, Eraser, AlertCircle, Calculator, Brain, Sparkles, RefreshCw } from 'lucide-react';
 
 interface SidebarProps {
   selectedQuizType: QuizType;
@@ -22,6 +22,36 @@ const quizTypes: { type: QuizType, icon: React.FC<any>, label: string }[] = [
 ];
 
 export default function Sidebar({ selectedQuizType, setSelectedQuizType, theme, isSidebarOpen, setIsSidebarOpen }: SidebarProps) {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleForceRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      // Unregister PWA service workers if supported
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      }
+      // Delete all cached storage items
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(
+          cacheNames.map(cacheName => caches.delete(cacheName))
+        );
+      }
+      console.log('[QUIZ-BUILDER-AI] Caches successfully cleared and PWA updated.');
+    } catch (e) {
+      console.error('Failed to unregister sw or clear caches:', e);
+    }
+    
+    // Tiny delay to show the spinner animation to user
+    setTimeout(() => {
+      window.location.reload();
+    }, 850);
+  };
+
   return (
     <>
       {/* Semi-transparent backdrop to dismiss drawer on mobile tap */}
@@ -38,7 +68,7 @@ export default function Sidebar({ selectedQuizType, setSelectedQuizType, theme, 
           </h1>
           <p className="text-[10px] uppercase tracking-[0.25em] text-gray-400 dark:text-zinc-500 font-bold">Quiz Console</p>
         </div>
-        <nav className="flex-1 overflow-y-auto px-4 pb-6 space-y-1">
+        <nav className="flex-1 overflow-y-auto px-4 pb-4 space-y-1">
           <div className="text-[10px] font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-[0.2em] mb-3 px-4 mt-4">Quiz Modules</div>
           {quizTypes.map((qt) => {
             const Icon = qt.icon;
@@ -67,6 +97,19 @@ export default function Sidebar({ selectedQuizType, setSelectedQuizType, theme, 
             )
           })}
         </nav>
+
+        {/* Premium Reload/Sync Button Footer at the very bottom */}
+        <div className="p-4 border-t border-gray-100 dark:border-zinc-800 bg-neutral-50/40 dark:bg-zinc-950/10 transition-colors">
+          <button
+            onClick={handleForceRefresh}
+            disabled={isRefreshing}
+            className={`w-full py-3 px-4 bg-emerald-50 dark:bg-emerald-950/35 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 border border-solid border-emerald-150 dark:border-emerald-900/40 text-emerald-850 dark:text-emerald-350 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm disabled:opacity-50`}
+            title="Clear Caches and Sync App Updates"
+          >
+            <RefreshCw size={13} className={`text-emerald-700 dark:text-emerald-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Syncing Updates...' : 'Refresh & Sync App'}
+          </button>
+        </div>
       </aside>
     </>
   );
