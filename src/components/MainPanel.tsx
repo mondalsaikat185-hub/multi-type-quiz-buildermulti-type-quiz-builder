@@ -5,7 +5,7 @@ import GeneratorPanel from './GeneratorPanel';
 import KeyManager from './KeyManager';
 import { db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { RefreshCw, ClipboardList, Sun, Moon } from 'lucide-react';
+import { RefreshCw, ClipboardList, Sun, Moon, Menu } from 'lucide-react';
 
 interface MainPanelProps {
   quizType: QuizType;
@@ -13,9 +13,10 @@ interface MainPanelProps {
   setConfig: React.Dispatch<React.SetStateAction<QuizConfig>>;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+  onToggleSidebar?: () => void;
 }
 
-export default function MainPanel({ quizType, config, setConfig, theme, toggleTheme }: MainPanelProps) {
+export default function MainPanel({ quizType, config, setConfig, theme, toggleTheme, onToggleSidebar }: MainPanelProps) {
   const [customKeys, setCustomKeys] = useState<string[]>([]);
   const [isConfigLoading, setIsConfigLoading] = useState(true);
   
@@ -120,10 +121,17 @@ export default function MainPanel({ quizType, config, setConfig, theme, toggleTh
 
   return (
     <div className="flex-1 overflow-auto flex flex-col bg-[#FAFAFA] dark:bg-zinc-950 transition-colors">
-      <header className="h-20 border-b border-gray-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between px-10 shrink-0 transition-colors">
-        <div className="flex items-center gap-4">
-          <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-gray-400 dark:text-zinc-500 font-sans">Quiz Studio</span>
-          <h2 className="serif text-2xl italic text-gray-900 dark:text-zinc-100 flex items-center gap-2">
+      <header className="h-20 border-b border-gray-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between px-4 md:px-10 shrink-0 transition-colors">
+        <div className="flex items-center gap-2 md:gap-4">
+          <button 
+            onClick={onToggleSidebar}
+            className="md:hidden p-2 rounded-xl bg-neutral-150 hover:bg-neutral-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 cursor-pointer border-none shadow-sm flex items-center justify-center transition-colors"
+            title="Open Quiz Modules"
+          >
+            <Menu size={18} />
+          </button>
+          <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-gray-400 dark:text-zinc-500 font-sans hidden sm:inline-block">Quiz Studio</span>
+          <h2 className="serif text-lg sm:text-2xl italic text-gray-900 dark:text-zinc-100 flex items-center gap-2">
             <ClipboardList className="w-5 h-5 text-emerald-700/80 dark:text-emerald-400/85" /> {quizType} Builder
           </h2>
         </div>
@@ -147,7 +155,7 @@ export default function MainPanel({ quizType, config, setConfig, theme, toggleTh
         </div>
       </header>
 
-      <div className="p-10 flex-1 flex flex-col gap-8 max-w-7xl mx-auto w-full">
+      <div className="px-4 py-6 pb-24 md:p-10 flex-1 flex flex-col gap-8 max-w-7xl mx-auto w-full">
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
           <div className="lg:col-span-2 space-y-6">
             <div className={`${isConfigLoading ? 'opacity-40 pointer-events-none' : ''} transition-opacity duration-300`}>

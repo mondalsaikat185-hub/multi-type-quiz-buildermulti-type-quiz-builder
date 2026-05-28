@@ -46,6 +46,7 @@ export default function AppLayout() {
       localStorage.setItem('admin_app_theme', nextTheme);
     } catch (e) {}
   };
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
     <div className={`flex h-screen overflow-hidden ${theme === 'dark' ? 'dark bg-zinc-950 text-zinc-100' : 'bg-gradient-to-b from-white via-neutral-50/50 to-neutral-100/40 text-gray-800'} font-sans selection:bg-emerald-600/20`}>
@@ -53,6 +54,8 @@ export default function AppLayout() {
         selectedQuizType={selectedQuizType}
         setSelectedQuizType={setSelectedQuizType}
         theme={theme}
+        isSidebarOpen={isSidebarOpen}
+        setIsSidebarOpen={setIsSidebarOpen}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <MainPanel 
@@ -61,6 +64,7 @@ export default function AppLayout() {
           setConfig={setConfig} 
           theme={theme}
           toggleTheme={toggleTheme}
+          onToggleSidebar={() => setIsSidebarOpen(true)}
         />
       </div>
     </div>
