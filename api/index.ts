@@ -1,3 +1,3 @@
-import { createExpressApp } from "../server.ts";
+import { createExpressApp } from "../server";
 const app = createExpressApp();
 export default app;
